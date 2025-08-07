@@ -1,0 +1,26 @@
+# Node.js dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# Optional npm cache directory
+.npm/
+
+# IDE and editor settings
+.vscode/
+.idea/
+
+# Build output
+dist/
+build/
+
+
+# Optional lock files
+package-lock.json
+
+# Docker
+docker-compose.override.yml
+
+# Debug
+debug.log

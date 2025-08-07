@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: courses-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: courses-service
+  template:
+    metadata:
+      labels:
+        app: courses-service
+    spec:
+      containers:
+        - name: courses-service
+          image: your-dockerhub-username/courses-service:latest
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: courses-service-config

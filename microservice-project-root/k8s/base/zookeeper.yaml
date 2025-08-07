@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: zookeeper
+spec:
+  containers:
+    - name: zookeeper
+      image: wurstmeister/zookeeper
+      ports:
+        - containerPort: 2181

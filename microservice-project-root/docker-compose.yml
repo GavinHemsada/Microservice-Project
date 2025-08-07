@@ -1,0 +1,136 @@
+services:
+  mongo:
+    image: mongo
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks: # Add this
+      - school_network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks: # Add this
+      - school_network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    networks: # Add this
+      - school_network
+
+  student-service:
+    build:
+      context: ./student-service
+      dockerfile: Dockerfile
+    volumes:
+      - ./student-service:/app
+      - ./shared:/app/src/shared
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongo
+      - kafka
+    env_file:
+      - ./student-service/.env.docker
+    networks: # Add this
+      - school_network
+
+  teacher-service:
+    build: ./teacher-service
+    volumes:
+      - ./teacher-service:/app
+      - ./shared:/app/src/shared
+    ports:
+      - "3001:3001"
+    depends_on:
+      - mongo
+      - kafka
+    env_file:
+      - ./teacher-service/.env.docker
+    networks: # Add this
+      - school_network
+
+  result-service:
+    build: ./result-service
+    volumes:
+      - ./result-service:/app
+      - ./shared:/app/src/shared
+    ports:
+      - "3002:3002"
+    depends_on:
+      - mongo
+      - kafka
+    env_file:
+      - ./result-service/.env.docker
+    networks: # Add this
+      - school_network
+
+  courses-service:
+    build: ./courses-service
+    volumes:
+      - ./courses-service:/app
+      - ./shared:/app/src/shared
+    ports:
+      - "3003:3003"
+    depends_on:
+      - mongo
+      - kafka
+    env_file:
+      - ./courses-service/.env.docker
+    networks: # Add this
+      - school_network
+
+  graphql-gateway:
+    build: ./graphql-gateway
+    volumes:
+      - ./graphql-gateway:/app
+    ports:
+      - "4000:4000"
+    depends_on:
+      - student-service
+      - teacher-service
+      - result-service
+      - courses-service
+    env_file:
+      - ./graphql-gateway/.env.docker
+    networks: # Add this
+      - school_network
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - graphql-gateway
+    networks:
+      - school_network
+
+volumes:
+  mongo-data:
+
+networks:
+  school_network:
+    driver: bridge

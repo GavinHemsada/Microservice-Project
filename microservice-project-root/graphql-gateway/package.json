@@ -1,0 +1,23 @@
+{
+  "name": "graphql-gateway",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "description": "",
+  "dependencies": {
+    "@apollo/gateway": "^2.11.2",
+    "@graphql-tools/merge": "^9.1.1",
+    "apollo-server": "^3.13.0",
+    "axios": "^1.11.0",
+    "dotenv": "^17.2.1",
+    "express": "^4.21.2",
+    "graphql": "^16.11.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
