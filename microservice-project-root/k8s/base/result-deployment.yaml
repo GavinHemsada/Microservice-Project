@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: result-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: result-service
+  template:
+    metadata:
+      labels:
+        app: result-service
+    spec:
+      containers:
+        - name: result-service
+          image: your-dockerhub-username/result-service:latest
+          ports:
+            - containerPort: 3002
+

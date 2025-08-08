@@ -8,66 +8,83 @@ const responseResolversEnroll = new Map();
 
 (async () => {
   try {
-    createConsumer("course-service", "studentid.response", async (data) => {
-      try {
-        const { correlationId, isValid, student_id } = data;
-        const resolver = responseResolversEnroll.get(correlationId);
-        if (resolver) {
-          resolver.resolve({ isValid, student_id });
-          responseResolversEnroll.delete(correlationId);
+    createConsumer(
+      "course-service-studentid-response",
+      "studentid.response",
+      async (data) => {
+        try {
+          const { correlationId, isValid, student_id } = data;
+          const resolver = responseResolversEnroll.get(correlationId);
+          if (resolver) {
+            if (resolver.timeoutId) clearTimeout(resolver.timeoutId);
+            resolver.resolve({ isValid, student_id });
+            responseResolversEnroll.delete(correlationId);
+          } else {
+            console.log(
+              "No resolver found for correlationId (likely timed out or already handled):",
+              correlationId
+            );
+          }
+        } catch (parseError) {
+          console.error("[Course Service] Error parsing message:", parseError);
         }
-      } catch (parseError) {
-        console.error("[Course Service] Error parsing message:", parseError);
       }
-    });
+    );
   } catch (error) {
     console.error("[Course Service] Failed to setup consumer:", error);
   }
 })();
 
 const createEnrollment = async (req, res) => {
-  const { student_id, course_id, enrollment_date } = req.body;
-  const course = await Courses.findById(course_id);
-  if (!course) return res.status(404).json({ message: "invalid course id" });
+  try {
+    const { student_id, course_id, enrollment_date } = req.body;
+    const course = await Courses.findById(course_id);
+    if (!course) return res.status(404).json({ message: "invalid course id" });
 
-  const correlationId = uuidv4();
-  await producer.send({
-    topic: "studentid.check",
-    messages: [{ value: JSON.stringify({ correlationId, student_id }) }],
-  });
+    const correlationId = uuidv4();
 
-  const response = await new Promise((resolve, reject) => {
-    responseResolversEnroll.set(correlationId, { resolve, reject });
+    const responsePromise = new Promise((resolve, reject) => {
+      const entry = { resolve, reject, timeoutId: null };
+      responseResolversEnroll.set(correlationId, entry);
+      entry.timeoutId = setTimeout(() => {
+        if (responseResolversEnroll.has(correlationId)) {
+          responseResolversEnroll.delete(correlationId);
+          reject(new Error("Timeout waiting for student validation"));
+        }
+      }, 5000);
+    });
 
-    setTimeout(() => {
-      if (responseResolversEnroll.has(correlationId)) {
-        responseResolversEnroll.delete(correlationId);
-        reject(new Error("Timeout waiting for student validation"));
-      }
-    }, 5000);
-  }).catch((err) => {
-    res.status(500).json({ error: err.message });
-    return null;
-  });
+    await producer.send({
+      topic: "studentid.check",
+      messages: [{ value: JSON.stringify({ correlationId, student_id }) }],
+    });
 
-  if (!response) return;
-  console.log("respons:", response);
-  if (!response.isValid) {
-    return res.status(400).json({ error: "Invalid student ID" });
+    const response = await responsePromise;
+    if (!response.isValid) {
+      return res.status(400).json({ error: "Invalid student ID" });
+    }
+
+    const enrollment = new Enrollment({
+      student_id,
+      course_id,
+      enrollment_date,
+    });
+
+    await enrollment.save();
+
+    return res.status(201).json({
+      message: "Enrollment successfully",
+      _id: enrollment._id,
+    });
+  } catch (err) {
+    console.error("Create enrollment error:", err);
+    const isTimeout = /Timeout waiting for student validation/.test(
+      String(err?.message)
+    );
+    return res.status(isTimeout ? 504 : 500).json({
+      error: isTimeout ? "Student validation timed out" : "Server error",
+    });
   }
-
-  const enrollment = new Enrollment({
-    student_id,
-    course_id,
-    enrollment_date,
-  });
-
-  await enrollment.save();
-
-  return res.status(201).json({
-    message: "Enrollment successfully",
-    _id: enrollment._id,
-  });
 };
 
 const readallEnrollment = async (_req, res) => {
@@ -77,7 +94,7 @@ const readallEnrollment = async (_req, res) => {
 
 const getEnrollmentbyStudentID = async (req, res) => {
   const studentID = req.params.s_id;
-  const enrollment = await Enrollment.find(studentID);
+  const enrollment = await Enrollment.find({ student_id: studentID });
   if (!enrollment) {
     return res.status(404).json({ message: "Enrollment not found" });
   }
@@ -86,7 +103,7 @@ const getEnrollmentbyStudentID = async (req, res) => {
 
 const getEnrollmentCourseID = async (req, res) => {
   const CourseID = req.params.c_id;
-  const enrollment = await Enrollment.find(CourseID);
+  const enrollment = await Enrollment.find({ course_id: CourseID });
   if (!enrollment) {
     return res.status(404).json({ message: "Enrollment not found" });
   }

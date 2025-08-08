@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teacher-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: teacher-service
+  template:
+    metadata:
+      labels:
+        app: teacher-service
+    spec:
+      containers:
+        - name: teacher-service
+          image: your-dockerhub-username/teacher-service:latest
+          ports:
+            - containerPort: 3001
+

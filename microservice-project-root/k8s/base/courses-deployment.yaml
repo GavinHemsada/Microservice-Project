@@ -16,7 +16,4 @@ spec:
         - name: courses-service
           image: your-dockerhub-username/courses-service:latest
           ports:
-            - containerPort: 3000
-          envFrom:
-            - configMapRef:
-                name: courses-service-config
+            - containerPort: 3003

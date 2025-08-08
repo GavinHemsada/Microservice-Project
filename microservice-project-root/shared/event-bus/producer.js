@@ -10,4 +10,9 @@ const producer = kafka.producer();
   await producer.connect();
 })();
 
-module.exports = { producer };
+async function disconnectProducer() {
+  await producer.disconnect();
+  console.log("Producer disconnected.");
+}
+
+module.exports = { producer, disconnectProducer };

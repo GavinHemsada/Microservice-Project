@@ -2,104 +2,91 @@ const Courses = require("../model/courses");
 const { createConsumer } = require("../shared/event-bus/Consumer");
 const { producer } = require("../shared/event-bus/producer");
 const { v4: uuidv4 } = require("uuid");
-const responseEmitter = require("../Service/event");
-const { once } = require("events");
 
-const pendingRequests = new Map();
+const responseResolversCourses = new Map();
 
 (async () => {
   try {
-    createConsumer("course-service", "teacherid.response", async (data) => {
-      try {
-        console.log("[Course Service] Raw message received:", data);
-        const { correlationId, isValid, teacher_id } = data;
-
-        // Resolve the pending promise if the correlationId exists
-        if (pendingRequests.has(correlationId)) {
-          const { resolve } = pendingRequests.get(correlationId);
-          resolve({ isValid, teacher_id });
-          pendingRequests.delete(correlationId);
+    createConsumer(
+      "course-service-teacherid-response",
+      "teacherid.response",
+      async (data) => {
+        try {
+          const { correlationId, isValid, teacher_id } = data;
+          console.log("Received response for teacher validation:", data);
+          const resolver = responseResolversCourses.get(correlationId);
+          if (resolver) {
+            if (resolver.timeoutId) clearTimeout(resolver.timeoutId);
+            resolver.resolve({ isValid, teacher_id });
+            responseResolversCourses.delete(correlationId);
+          } else {
+            console.log(
+              "No resolver found for correlationId (likely timed out or already handled):",
+              correlationId
+            );
+          }
+        } catch (parseError) {
+          console.error("[Course Service] Error parsing message:", parseError);
         }
-
-        console.log("[Course Service] Processed data:", data);
-      } catch (parseError) {
-        console.error(
-          "[Course Service] Error parsing message:",
-          parseError,
-          "Raw data:",
-          data
-        );
       }
-    });
+    );
   } catch (error) {
     console.error("[Course Service] Failed to setup consumer:", error);
   }
 })();
 
-// Function to wait for response with timeout
-async function waitForResponse(correlationId, timeout = 5000) {
-  return new Promise((resolve, reject) => {
-    // Set timeout for the request
-    const timer = setTimeout(() => {
-      pendingRequests.delete(correlationId);
-      reject(new Error("Timeout waiting for teacher validation"));
-    }, timeout);
-
-    // Store the resolver in the map
-    pendingRequests.set(correlationId, {
-      resolve: (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      reject: (error) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    });
-  });
-}
-
 const addCourses = async (req, res) => {
-  const { teacher_id, name, description } = req.body;
-  const correlationId = uuidv4();
-
-  await producer.send({
-    topic: "teacherid.check",
-    messages: [{ value: JSON.stringify({ correlationId, teacher_id }) }],
-  });
-
-  let response = null;
-  console.log("[Course Service] Waiting for correlationId:", correlationId);
   try {
-    response = await waitForResponse(correlationId);
-    console.log("Response:", response);
+    const { teacher_id, name, description } = req.body;
+    const correlationId = uuidv4();
 
+    const responsePromise = new Promise((resolve, reject) => {
+      console.log("Setting resolver for correlationId:", correlationId);
+      const resolverEntry = { resolve, reject, timeoutId: null };
+      responseResolversCourses.set(correlationId, resolverEntry);
+
+      resolverEntry.timeoutId = setTimeout(() => {
+        if (responseResolversCourses.has(correlationId)) {
+          console.log("Timeout for correlationId:", correlationId);
+          responseResolversCourses.delete(correlationId);
+          reject(new Error("Timeout waiting for teacher validation"));
+        }
+      }, 5000);
+    });
+
+    await producer.send({
+      topic: "teacherid.check",
+      messages: [{ value: JSON.stringify({ correlationId, teacher_id }) }],
+    });
+
+    const response = await responsePromise;
+    if (!response) return;
+    console.log("response:", response);
     if (!response.isValid) {
-      return res.status(400).json({ error: "Invalid Teacher ID" });
+      return res.status(400).json({ error: "Invalid teacher ID" });
     }
 
-    // Continue with your logic...
+    const newCourse = new Courses({
+      teacher_id: response.teacher_id,
+      name,
+      description,
+    });
+
+    await newCourse.save();
+
+    return res.status(201).json({
+      message: "Course created successfully",
+      _id: newCourse._id,
+    });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error("Add course error:", err);
+    const isTimeout = /Timeout waiting for teacher validation/.test(
+      String(err?.message)
+    );
+    return res.status(isTimeout ? 504 : 500).json({
+      error: isTimeout ? "Teacher validation timed out" : "Server error",
+    });
   }
-
-  console.log("Response:", response);
-  if (!response.isValid) {
-    return res.status(400).json({ error: "Invalid Teacher ID" });
-  }
-
-  const newCourse = new Courses({
-    teacher_id: response.teacher_id,
-    name,
-    description,
-  });
-
-  await newCourse.save();
-
-  return res.status(201).json({
-    message: "Course created successfully",
-    _id: newCourse._id,
-  });
 };
 
 const readallCourses = async (_req, res) => {
@@ -109,7 +96,7 @@ const readallCourses = async (_req, res) => {
 
 const getCoursesbyTeacherID = async (req, res) => {
   const teacherID = req.params.t_id;
-  const courses = await Courses.find(teacherID);
+  const courses = await Courses.find({ teacher_id: teacherID });
   if (!courses) {
     return res.status(404).json({ message: "courses not found" });
   }
@@ -118,7 +105,7 @@ const getCoursesbyTeacherID = async (req, res) => {
 
 const getCoursesbyID = async (req, res) => {
   const CourseID = req.params.id;
-  const courses = await Courses.find(CourseID);
+  const courses = await Courses.findById(CourseID);
   if (!courses) {
     return res.status(404).json({ message: "courses not found" });
   }

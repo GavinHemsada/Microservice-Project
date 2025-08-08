@@ -4,11 +4,10 @@ const kafka = new Kafka({
   brokers: ["kafka:9092"],
 });
 
-
 async function createConsumer(groupId, topic, handleMessage) {
   const consumer = kafka.consumer({ groupId });
   await consumer.connect();
-  await consumer.subscribe({ topic, fromBeginning: true });
+  await consumer.subscribe({ topic, fromBeginning: false });
 
   await consumer.run({
     eachMessage: async ({ message }) => {
@@ -16,6 +15,13 @@ async function createConsumer(groupId, topic, handleMessage) {
       await handleMessage(data);
     },
   });
+
+  return {
+    disconnect: async () => {
+      await consumer.disconnect();
+      console.log(`Consumer for group ${groupId} disconnected.`);
+    },
+  };
 }
 
-module.exports = {createConsumer};
+module.exports = { createConsumer };
