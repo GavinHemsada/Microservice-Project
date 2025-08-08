@@ -14,7 +14,7 @@ router.post(
   dtovalidate(resultDTO),
   resultController.addResult
 );
-router.get("/", jwtProtect, resultController.updateResult);
+router.get("/", jwtProtect, resultController.readallResults);
 router.get("/student/:s_id", jwtProtect, resultController.getResultbyStudentID);
 router.get("/courses/:c_id", jwtProtect, resultController.getResultbyCourseID);
 router.put(

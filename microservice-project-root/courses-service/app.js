@@ -3,7 +3,7 @@ const cors = require("cors");
 require("dotenv").config();
 const coursesRouter = require("./src/router/courses.router");
 const enrollmentRouter = require("./src/router/enrollment.router");
-const { disconnectProducer } = require("./src/shared/event-bus/producer"); // Add this line
+const { disconnectProducer } = require("../shared/event-bus/producer");
 
 const app = express();
 app.use(cors());

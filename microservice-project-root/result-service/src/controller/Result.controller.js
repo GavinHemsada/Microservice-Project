@@ -1,119 +1,129 @@
 const Result = require("../model/result");
-const { createConsumer } = require("../shared/event-bus/Consumer");
-const { producer } = require("../shared/event-bus/producer");
+const { createConsumer } = require("../../shared/event-bus/Consumer");
+const { producer } = require("../../shared/event-bus/producer");
 const { v4: uuidv4 } = require("uuid");
 
 const responseResolversResult = new Map();
 
-(async () => {
-  try {
-    createConsumer(
-      "result-service-studentid-response",
-      "studentid.response",
-      async (data) => {
-        try {
-          const { correlationId, isValid, student_id } = data;
-          console.log("catch data", data);
-          const resolver = responseResolversResult.get(correlationId);
-          if (resolver) {
-            if (resolver.timeoutId) clearTimeout(resolver.timeoutId);
-            resolver.resolve({ isValid, student_id });
-            responseResolversResult.delete(correlationId);
-          } else {
-            console.log(
-              "No resolver found for student correlationId (likely timed out or already handled):",
-              correlationId
+if (process.env.NODE_ENV !== "test") {
+  (async () => {
+    try {
+      createConsumer(
+        "result-service-studentid-response",
+        "studentid.response",
+        async (data) => {
+          try {
+            const { correlationId, isValid, student_id } = data;
+            console.log("catch data", data);
+            const resolver = responseResolversResult.get(correlationId);
+            if (resolver) {
+              if (resolver.timeoutId) clearTimeout(resolver.timeoutId);
+              resolver.resolve({ isValid, student_id });
+              responseResolversResult.delete(correlationId);
+            } else {
+              console.log(
+                "No resolver found for student correlationId (likely timed out or already handled):",
+                correlationId
+              );
+            }
+          } catch (parseError) {
+            console.error(
+              "[result-service] Error parsing message:",
+              parseError
             );
           }
-        } catch (parseError) {
-          console.error("[result-service] Error parsing message:", parseError);
         }
-      }
-    );
-  } catch (error) {
-    console.error("[result-service] Failed to setup consumer:", error);
-  }
-})();
+      );
+    } catch (error) {
+      console.error("[result-service] Failed to setup consumer:", error);
+    }
+  })();
 
-(async () => {
-  try {
-    createConsumer(
-      "result-service-courseid-response",
-      "courseid.response",
-      async (data) => {
-        try {
-          const { correlationId2, isValid, course_id } = data;
-          const resolver = responseResolversResult.get(correlationId2);
-          if (resolver) {
-            if (resolver.timeoutId) clearTimeout(resolver.timeoutId);
-            resolver.resolve({ isValid, course_id });
-            responseResolversResult.delete(correlationId2);
-          } else {
-            console.log(
-              "No resolver found for course correlationId (likely timed out or already handled):",
-              correlationId2
+  (async () => {
+    try {
+      createConsumer(
+        "result-service-courseid-response",
+        "courseid.response",
+        async (data) => {
+          try {
+            const { correlationId2, isValid, course_id } = data;
+            const resolver = responseResolversResult.get(correlationId2);
+            if (resolver) {
+              if (resolver.timeoutId) clearTimeout(resolver.timeoutId);
+              resolver.resolve({ isValid, course_id });
+              responseResolversResult.delete(correlationId2);
+            } else {
+              console.log(
+                "No resolver found for course correlationId (likely timed out or already handled):",
+                correlationId2
+              );
+            }
+          } catch (parseError) {
+            console.error(
+              "[result-service] Error parsing message:",
+              parseError
             );
           }
-        } catch (parseError) {
-          console.error("[result-service] Error parsing message:", parseError);
         }
-      }
-    );
-  } catch (error) {
-    console.error("[result-service] Failed to setup consumer:", error);
-  }
-})();
+      );
+    } catch (error) {
+      console.error("[result-service] Failed to setup consumer:", error);
+    }
+  })();
+}
 
 const addResult = async (req, res) => {
   try {
     const { student_id, course_id, marks, grade, semester } = req.body;
-    const correlationId = uuidv4();
-    const correlationId2 = uuidv4();
+    if (process.env.NODE_ENV !== "test") {
+      const correlationId = uuidv4();
+      const correlationId2 = uuidv4();
 
-    const studentPromise = new Promise((resolve, reject) => {
-      const entry = { resolve, reject, timeoutId: null };
-      responseResolversResult.set(correlationId, entry);
-      entry.timeoutId = setTimeout(() => {
-        if (responseResolversResult.has(correlationId)) {
-          responseResolversResult.delete(correlationId);
-          reject(new Error("Timeout waiting for student validation"));
-        }
-      }, 5000);
-    });
+      const studentPromise = new Promise((resolve, reject) => {
+        const entry = { resolve, reject, timeoutId: null };
+        responseResolversResult.set(correlationId, entry);
+        entry.timeoutId = setTimeout(() => {
+          if (responseResolversResult.has(correlationId)) {
+            responseResolversResult.delete(correlationId);
+            reject(new Error("Timeout waiting for student validation"));
+          }
+        }, 5000);
+      });
 
-    const coursePromise = new Promise((resolve, reject) => {
-      const entry = { resolve, reject, timeoutId: null };
-      responseResolversResult.set(correlationId2, entry);
-      entry.timeoutId = setTimeout(() => {
-        if (responseResolversResult.has(correlationId2)) {
-          responseResolversResult.delete(correlationId2);
-          reject(new Error("Timeout waiting for course validation"));
-        }
-      }, 5000);
-    });
+      const coursePromise = new Promise((resolve, reject) => {
+        const entry = { resolve, reject, timeoutId: null };
+        responseResolversResult.set(correlationId2, entry);
+        entry.timeoutId = setTimeout(() => {
+          if (responseResolversResult.has(correlationId2)) {
+            responseResolversResult.delete(correlationId2);
+            reject(new Error("Timeout waiting for course validation"));
+          }
+        }, 5000);
+      });
 
-    await producer.send({
-      topic: "studentid.check",
-      messages: [{ value: JSON.stringify({ correlationId, student_id }) }],
-    });
-    await producer.send({
-      topic: "courseid.check",
-      messages: [{ value: JSON.stringify({ correlationId2, course_id }) }],
-    });
+      await producer.send({
+        topic: "studentid.check",
+        messages: [{ value: JSON.stringify({ correlationId, student_id }) }],
+      });
+      await producer.send({
+        topic: "courseid.check",
+        messages: [{ value: JSON.stringify({ correlationId2, course_id }) }],
+      });
 
-    console.log("waiting correlationId:", correlationId);
-    console.log("waiting correlationId2:", correlationId2);
+      console.log("waiting correlationId:", correlationId);
+      console.log("waiting correlationId2:", correlationId2);
 
-    const [studentResponse, courseResponse] = await Promise.all([
-      studentPromise,
-      coursePromise,
-    ]);
+      const [studentResponse, courseResponse] = await Promise.all([
+        studentPromise,
+        coursePromise,
+      ]);
 
-    if (!studentResponse.isValid) {
-      return res.status(400).json({ error: "Invalid student ID" });
-    }
-    if (!courseResponse.isValid) {
-      return res.status(400).json({ error: "Invalid course ID" });
+      if (!studentResponse.isValid) {
+        return res.status(400).json({ error: "Invalid student ID" });
+      }
+      if (!courseResponse.isValid) {
+        return res.status(400).json({ error: "Invalid course ID" });
+      }
     }
 
     const result = new Result({

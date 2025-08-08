@@ -1,12 +1,27 @@
-const request = require('supertest');
-const mongoose = require('mongoose');
-const app = require('../../app');
+const request = require("supertest");
+const mongoose = require("mongoose");
+const jwt = require("jsonwebtoken");
 
-let studentId;
-let token;
+
+process.env.NODE_ENV = "test";
+process.env.JWT_SECRET = process.env.JWT_SECRET || "testsecret";
+
+const app = require("../../app");
+
+let resultId;
+let teacherToken;
+let userToken;
 
 beforeAll(async () => {
-  await mongoose.connect('mongodb://localhost:27017/result_test');
+  await mongoose.connect("mongodb://localhost:27017/result_test");
+  teacherToken = jwt.sign(
+    { id: "64b8f0f9e13a2a0012a3b001", role: "Teacher" },
+    process.env.JWT_SECRET
+  );
+  userToken = jwt.sign(
+    { id: "64b8f0f9e13a2a0012a3b002", role: "Student" },
+    process.env.JWT_SECRET
+  );
 });
 
 afterAll(async () => {
@@ -14,90 +29,89 @@ afterAll(async () => {
   await mongoose.disconnect();
 });
 
-describe('Result API Endpoints', () => {
+describe("Result API Endpoints", () => {
   const testResult = {
-    first_name: "gavi1",
-    last_name : "hemsada",
-    dob: "2001.1.1",
-    email: "gavin@gmail.com",
-    gender : "male",
-    phone : "0718721716",
-    password: "123456",
-    address : {
-        street : "stree1",
-        city:"Piliyandala", 
-        state:"WP", 
-        zipCode:"10300", 
-        country:"SL"
-    }
+    student_id: "507f1f77bcf86cd799439011",
+    course_id: "507f1f77bcf86cd799439012",
+    marks: 85,
+    grade: "A",
+    semester: "2024-Fall",
   };
 
-  it('should register a new student', async () => {
-    const res = await request(app).post('/api/student/register').send(testResult);
+  it("should create a new result", async () => {
+    const res = await request(app)
+      .post("/api/result/add")
+      .set("Authorization", `Bearer ${teacherToken}`)
+      .send(testResult);
 
     expect(res.statusCode).toBe(201);
-    expect(res.body).toHaveProperty('message','User created successfully');
-    studentId = res.body._id;
+    expect(res.body).toHaveProperty("message", "result successfully");
+    expect(res.body).toHaveProperty("_id");
+    resultId = res.body._id;
   });
 
-  it('should login successfully with valid credentials', async () => {
-    const res = await request(app).post('/api/student/login').send({
-      email: testStudent.email,
-      password: testStudent.password,
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toHaveProperty('message', 'Login successful');
-    expect(res.body).toHaveProperty('token');
-
-    token = res.body.token;
-  });
-
-  it('should fetch all students', async () => {
+  it("should fetch all results", async () => {
     const res = await request(app)
-      .get('/api/student/all')
-      .set('Authorization', `Bearer ${token}`);
+      .get("/api/result")
+      .set("Authorization", `Bearer ${userToken}`);
 
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  it('should fetch student by id', async () => {
+  it("should fetch results by student id", async () => {
     const res = await request(app)
-      .get(`/api/student/${studentId}`)
-      .set('Authorization', `Bearer ${token}`);
+      .get(`/api/result/student/${testResult.student_id}`)
+      .set("Authorization", `Bearer ${userToken}`);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toHaveProperty('_id', studentId);
-    expect(res.body).toHaveProperty('first_name');
-    expect(res.body).toHaveProperty('last_name');
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body[0]).toHaveProperty("student_id");
+    expect(res.body[0]).toHaveProperty("course_id");
   });
 
-  it('should update student info', async () => {
+  it("should fetch results by course id", async () => {
     const res = await request(app)
-      .put(`/api/student/${studentId}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send(testStudent);
+      .get(`/api/result/courses/${testResult.course_id}`)
+      .set("Authorization", `Bearer ${userToken}`);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toHaveProperty('message', 'Successful update!');
+    expect(Array.isArray(res.body)).toBe(true);
   });
 
-  it('should delete the student', async () => {
+  it("should update result info", async () => {
+    const updates = { marks: 90, grade: "A+", semester: "2025-Spring" };
+
     const res = await request(app)
-      .delete(`/api/student/${studentId}`)
-      .set('Authorization', `Bearer ${token}`);
+      .put(`/api/result/${resultId}`)
+      .set("Authorization", `Bearer ${teacherToken}`)
+      .send({ ...testResult, ...updates });
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toHaveProperty('message');
+    expect(res.body).toHaveProperty("message", "Successful update!");
+    expect(res.body.result).toHaveProperty("marks", 90);
+    expect(res.body.result).toHaveProperty("grade", "A+");
   });
 
-  it('should return 400 for invalid login', async () => {
-    const res = await request(app).post('/api/student/login').send({
-      email: 'wrong@example.com',
-      password: 'wrongpass',
-    });
+  it("should return 400 for invalid result data", async () => {
+    const invalid = { marks: 50 }; 
+
+    const res = await request(app)
+      .post("/api/result/add")
+      .set("Authorization", `Bearer ${teacherToken}`)
+      .send(invalid);
 
     expect(res.statusCode).toBe(400);
-    expect(res.body).toHaveProperty('error');
+    expect(res.body).toHaveProperty("errors");
+  });
+
+  it("should delete the result", async () => {
+    const res = await request(app)
+      .delete(`/api/result/${resultId}`)
+      .set("Authorization", `Bearer ${teacherToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toHaveProperty("message", "result deleted successfully");
   });
 });

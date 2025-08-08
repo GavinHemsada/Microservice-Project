@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 const resultRouter = require("./src/router/result.router");
-const { disconnectProducer } = require("./src/shared/event-bus/producer"); // Add this line
+const { disconnectProducer } = require("../shared/event-bus/producer");
 
 const app = express();
 app.use(cors());
